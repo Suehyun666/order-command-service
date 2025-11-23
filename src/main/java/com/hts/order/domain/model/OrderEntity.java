@@ -6,12 +6,12 @@ public record OrderEntity(
         long orderId,
         long accountId,
         String symbol,
-        OrderCommonsProto.Side side,
-        OrderCommonsProto.OrderType orderType,
+        Side side,
+        OrderType orderType,
         long quantity,
         long price,
-        OrderCommonsProto.TimeInForce timeInForce,
-        OrderCommonsProto.OrderStatus status
+        TimeInForce timeInForce,
+        OrderStatus status
 ) {
     public static OrderEntity from() {
         return null;

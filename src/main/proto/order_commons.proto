@@ -2,17 +2,22 @@ syntax = "proto3";
 
 package order;
 
+option java_multiple_files = true;
 option java_package = "com.hts.generated.grpc";
-option java_outer_classname = "OrderCommonsProto";
+option java_outer_classname = "OrderCommons";
 
 enum OrderType {
   MARKET = 0;
   LIMIT = 1;
 }
+
+// 주문 방향
 enum Side {
-  BUY = 0;
-  SELL = 1;
+  SIDE_UNKNOWN = 0;
+  BUY = 1;   // CoinTossX: 1
+  SELL = 2;  // CoinTossX: 2
 }
+
 enum TimeInForce {
   DAY = 0;
   GTC = 1;  // Good Till Cancel
@@ -20,7 +25,13 @@ enum TimeInForce {
   FOK = 3;  // Fill or Kill
 }
 
-// 주문 상태
+// 여러 가격대 체결 그룹
+message FillGroup {
+  string price = 1;   // BigDecimal 문자열
+  int64 quantity = 2;
+}
+
+// 주문 상태 (Order Service 내부 상태)
 enum OrderStatus {
   RECEIVED = 0;        // 접수됨
   ACCEPTED = 1;        // 승인됨

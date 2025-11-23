@@ -1,24 +1,56 @@
 syntax = "proto3";
 
-package order;
+package event;
 
 import "order_commons.proto";
 
 option java_multiple_files = true;
-option java_package = "com.hts.generated.event";
+option java_package = "com.hts.generated.events";
 option java_outer_classname = "OrderEventsProto";
 
-// 체결 이벤트 (GateWayConnector → Order)
-message FillEvent {
-  string event_id = 1;        // 멱등성 키 (UUID)
-  int64 account_id = 2;       // Partition Key로 사용 → 같은 계좌는 순서 보장
-  string order_id = 3;        // 원본 주문 ID
-  string symbol = 4;          // AAPL, TSLA, etc.
-  Side side = 5;              // BUY, SELL
-  OrderType type =6;          //
-  string fill_price = 7;      // BigDecimal 문자열 "150.00"
-  string quantity = 8;        // BigDecimal 문자열 "10"
-  string filled_amount = 9;   // price * qty = "1500.00"
-  int64 timestamp = 10;        // Unix epoch milliseconds
-  OrderStatus status =11;     // 주문 상태
+// 체결 이벤트 (Gateway → Order Service)
+message OrderFillEvent {
+  string event_id = 1;              // 멱등성 키
+  string client_order_id = 2;       // clientOrderId
+  int64 account_id = 3;             // 계좌 ID
+
+  int32 security_id = 4;            // securityId (종목)
+  order.Side side = 5;              // Buy/Sell
+
+  ExecutionType execution_type = 6;      // Trade/TradeCorrect/TradeCancel
+  GatewayOrderStatus gateway_status = 7; // Filled/PartiallyFilled 등
+
+  // 체결 정보
+  repeated order.FillGroup fills = 8;    // 체결 가격/수량 (단일 체결도 길이 1)
+  int64 leaves_quantity = 9;             // 남은 수량
+
+  int64 transact_time = 10;         // epoch millis
+}
+
+// 실행 타입 (CoinTossX ExecutionTypeEnum 매핑)
+enum ExecutionType {
+  EXECUTION_UNKNOWN = 0;
+  NEW = 1;                // 신규 주문 (CoinTossX: '0')
+  TRADE = 2;              // 일반 체결 (CoinTossX: 'F')
+  TRADE_CORRECT = 3;      // 체결 정정 (CoinTossX: 'G')
+  TRADE_CANCEL = 4;       // 체결 취소 (CoinTossX: 'H')
+  CANCELLED = 5;          // 주문 취소 (CoinTossX: '4')
+  AMENDED = 6;            // 주문 정정 (CoinTossX: '5')
+  REJECTED = 7;           // 주문 거부 (CoinTossX: '8')
+  EXPIRED = 8;            // 주문 만료 (CoinTossX: 'C')
+  SUSPENDED = 9;          // 주문 중지 (CoinTossX: '9')
+  RESTATED = 10;          // 주문 재진술 (CoinTossX: 'D')
+  TRIGGERED = 11;         // 트리거됨 (CoinTossX: 'L')
+}
+
+// CoinTossX 주문 상태
+enum GatewayOrderStatus {
+  GATEWAY_STATUS_UNKNOWN = 0;
+  GATEWAY_NEW = 1;                // CoinTossX: 0
+  GATEWAY_PARTIALLY_FILLED = 2;   // CoinTossX: 1
+  GATEWAY_FILLED = 3;             // CoinTossX: 2
+  GATEWAY_CANCELLED = 4;          // CoinTossX: 4
+  GATEWAY_EXPIRED = 5;            // CoinTossX: 6
+  GATEWAY_REJECTED = 6;           // CoinTossX: 8
+  GATEWAY_SUSPENDED = 7;          // CoinTossX: 9
 }
