@@ -1,0 +1,73 @@
+plugins {
+    id 'java'
+    id 'idea'
+    id 'io.quarkus'
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+}
+
+group = 'com.hts.order'
+version = '1.0.0'
+
+dependencies {
+    implementation enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}")
+    //gRPC
+    implementation 'io.quarkus:quarkus-grpc'
+    implementation 'io.quarkus:quarkus-mutiny'
+
+    //Database
+    implementation 'io.quarkus:quarkus-jdbc-postgresql'
+    implementation 'io.quarkiverse.jooq:quarkus-jooq:2.1.0'
+
+    //Redis
+    implementation 'io.quarkus:quarkus-redis-cache'
+    implementation 'io.quarkus:quarkus-redis-client'
+
+    // Kafka
+    implementation 'io.quarkus:quarkus-messaging-kafka'
+
+    // Monitoring
+    implementation 'io.quarkus:quarkus-micrometer'
+    implementation 'io.quarkus:quarkus-micrometer-registry-prometheus'
+    implementation 'io.quarkus:quarkus-smallrye-health'
+    implementation 'io.quarkus:quarkus-smallrye-fault-tolerance'
+
+    // Deployment
+    implementation 'io.quarkiverse.config:quarkus-config-consul'
+    implementation 'io.quarkus:quarkus-container-image-jib'
+
+    //test
+    testImplementation 'io.quarkus:quarkus-junit5'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs += 'build/classes/java/quarkus-generated-sources/grpc'
+            srcDirs += 'build/classes/java/quarkus-generated-sources/events'
+        }
+    }
+}
+
+test {
+    systemProperty "java.util.logging.manager", "org.jboss.logmanager.LogManager"
+    jvmArgs "--add-opens", "java.base/java.lang=ALL-UNNAMED"
+}
+compileJava {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-parameters'
+}
+
+compileTestJava {
+    options.encoding = 'UTF-8'
+}
+
+

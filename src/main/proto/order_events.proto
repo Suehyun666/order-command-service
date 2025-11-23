@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package order;
+
+import "order_commons.proto";
+
+option java_multiple_files = true;
+option java_package = "com.hts.generated.event";
+option java_outer_classname = "OrderEventsProto";
+
+// 체결 이벤트 (GateWayConnector → Order)
+// Kafka Topic: order.fills
+message FillEvent {
+  string event_id = 1;        // 멱등성 키 (UUID)
+  int64 account_id = 2;       // Partition Key로 사용 → 같은 계좌는 순서 보장
+  string order_id = 3;        // 원본 주문 ID
+  string symbol = 4;          // AAPL, TSLA, etc.
+  string side = 5;            // BUY, SELL
+  string fill_price = 6;      // BigDecimal 문자열 "150.00"
+  string quantity = 7;        // BigDecimal 문자열 "10"
+  string filled_amount = 8;   // price * qty = "1500.00"
+  int64 timestamp = 9;        // Unix epoch milliseconds
+}

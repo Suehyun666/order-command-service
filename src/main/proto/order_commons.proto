@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package order;
+
+option java_package = "com.hts.generated.grpc";
+option java_outer_classname = "OrderCommonsProto";
+
+enum OrderType {
+  MARKET = 0;
+  LIMIT = 1;
+}
+enum Side {
+  BUY = 0;
+  SELL = 1;
+}
+enum TimeInForce {
+  DAY = 0;
+  GTC = 1;  // Good Till Cancel
+  IOC = 2;  // Immediate or Cancel
+  FOK = 3;  // Fill or Kill
+}
+
+// 주문 상태
+enum OrderStatus {
+  RECEIVED = 0;        // 접수됨
+  ACCEPTED = 1;        // 승인됨
+  SENT = 2;            // 게이트웨이로 전송됨
+  PARTIALLY_FILLED = 3; // 부분 체결
+  FILLED = 4;          // 전체 체결
+  CANCEL_REQUESTED = 5; // 취소 요청됨
+  CANCELED = 6;        // 취소됨
+  REJECTED = 7;        // 거부됨
+}

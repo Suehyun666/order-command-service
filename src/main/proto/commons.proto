@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package protocol;
+
+option java_package = "com.hts.generated.grpc";
+option java_outer_classname = "CommonsProto";
+
+message SecureSession {
+  string session_id = 1;
+}
+
+message ErrorMessage {
+  int32 code = 1;
+  string message = 2;
+}
