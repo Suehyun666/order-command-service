@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package order;
 
-import "commons.proto";
 import "order_commons.proto";
 
 option java_multiple_files = true;
@@ -11,7 +10,7 @@ option java_outer_classname = "OrderProto";
 
 // 주문 요청
 message PlaceOrderRequest {
-  protocol.SecureSession secure = 1;  // 세션 인증
+  string secure = 1;  // 세션 인증
   string symbol = 2;           // 종목 코드
   Side side = 3;               // 매수/매도
   OrderType order_type = 4;    // 주문 타입
@@ -22,7 +21,7 @@ message PlaceOrderRequest {
 
 // 주문 취소 요청
 message CancelOrderRequest {
-  protocol.SecureSession secure = 1;  // 세션 인증
+  string secure = 1;  // 세션 인증
   string symbol = 2;         // 종목 코드
   int64 order_id = 3;          // 주문 ID
 }

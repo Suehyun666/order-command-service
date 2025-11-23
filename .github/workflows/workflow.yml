@@ -1,0 +1,84 @@
+name: Build and Deploy Order Service
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  DOCKER_IMAGE: suehunpark/order-service
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 코드 체크아웃
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 전체 git history (커밋 해시 확인용)
+
+      # 2. GraalVM 설치 (Java 21)
+      - name: Set up GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '21'
+          distribution: 'graalvm-community'
+          github-token: ${{ github.token }}
+          cache: 'gradle'
+
+      # 3. Gradle 실행 권한 부여
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # 4. 테스트 실행
+      - name: Run tests
+        run: ./gradlew test --no-daemon
+
+      # 5. Docker Hub 로그인
+      - name: Log in to Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # 6. Git 커밋 해시 추출 (짧은 버전)
+      - name: Get Git commit hash
+        id: vars
+        run: echo "GIT_COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      # 7. Jib를 통한 빌드 및 Docker Hub 푸시
+      - name: Build and Push Docker Image with Jib
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          ./gradlew build \
+            -Dquarkus.container-image.build=true \
+            -Dquarkus.container-image.push=true \
+            -Dquarkus.container-image.image=${{ env.DOCKER_IMAGE }} \
+            -Dquarkus.container-image.tag=${{ steps.vars.outputs.GIT_COMMIT }} \
+            -Dquarkus.container-image.additional-tags=latest \
+            -Dquarkus.container-image.username=${{ secrets.DOCKER_USERNAME }} \
+            -Dquarkus.container-image.password=${{ secrets.DOCKER_PASSWORD }} \
+            -x test --no-daemon
+
+      # 8. 빌드 결과 출력
+      - name: Image Details
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "✅ Docker Image Published:"
+          echo "📦 Image: ${{ env.DOCKER_IMAGE }}:${{ steps.vars.outputs.GIT_COMMIT }}"
+          echo "📦 Image: ${{ env.DOCKER_IMAGE }}:latest"
+
+      - name: Deploy to Nomad
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.NOMAD_SERVER_HOST }}
+          username: ${{ secrets.NOMAD_SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.NOMAD_SERVER_PORT || 22 }}
+          script: |
+
