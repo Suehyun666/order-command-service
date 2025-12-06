@@ -11,8 +11,7 @@ public class CompensationExecutor {
 
     private static final Logger log = Logger.getLogger(CompensationExecutor.class);
 
-    @Inject
-    AccountGrpcClient accountClient;
+    @Inject AccountGrpcClient accountClient;
 
     public Uni<Void> compensateCashReserve(long accountId, String reserveId) {
         log.warnf("Compensating cash reserve: accountId=%d, reserveId=%s", accountId, reserveId);

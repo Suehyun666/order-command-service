@@ -1,4 +1,4 @@
-name: Build and Deploy Order Service
+name: Build and Deploy Order Command Service
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ "main" ]
 
 env:
-  DOCKER_IMAGE: suehunpark/order-service
+  DOCKER_IMAGE: suehunpark/order-command-service
 
 jobs:
   build-and-push:
@@ -59,26 +59,3 @@ jobs:
           echo "✅ Docker Image Published:"
           echo "📦 Image: ${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}"
           echo "Also tagged as: latest"
-
-      # main 브랜치 push일 때만 배포
-      - name: Deploy to Nomad
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.NOMAD_SERVER_HOST }}
-          username: ${{ secrets.NOMAD_SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: 22
-          script: |
-            set -e
-            export NOMAD_ADDR=${{ secrets.NOMAD_INTERNAL_ADDR }}
-            
-            echo "Target Image: ${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}"
-
-            # 여기서 image_tag를 order.nomad에 넘긴다
-            nomad job run \
-              -var="image_tag=${{ env.IMAGE_TAG }}" \
-              /opt/nomad-jobs/app/order-grpc.nomad
-
-            nomad job status order
-            echo "✅ Deployment triggered."

@@ -3,6 +3,7 @@ package com.hts.order.api.grpc;
 import com.hts.generated.grpc.*;
 import com.hts.order.domain.model.ServiceResult;
 import com.hts.order.domain.service.OrderCommandService;
+import io.grpc.Status;
 import io.quarkus.grpc.GrpcService;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
@@ -17,25 +18,39 @@ public class OrderGrpcServer implements OrderService {
 
     @Override
     public Uni<OrderResponse> placeOrder(PlaceOrderRequest request) {
-        log.infof("PlaceOrder: symbol=%s, side=%s, quantity=%d, price=%d",
-                  request.getSymbol(), request.getSide(), request.getQuantity(), request.getPrice());
+        Long accountId = AuthInterceptor.ACCOUNT_ID_CONTEXT_KEY.get();
 
-        return orderCommandService.handlePlace(request)
+        if (accountId == null || accountId <= 0) {
+            log.warn("Invalid or missing accountId in context");
+            return Uni.createFrom().item(buildErrorResponse(0, "Unauthorized"));
+        }
+
+        log.infof("PlaceOrder: accountId=%d, symbol=%s, side=%s, quantity=%d, price=%d",
+                  accountId, request.getSymbol(), request.getSide(), request.getQuantity(), request.getPrice());
+
+        return orderCommandService.handlePlace(accountId, request)
                 .map(this::toResponse)
                 .onFailure().recoverWithItem(t -> {
-                    log.errorf(t, "PlaceOrder failed: symbol=%s", request.getSymbol());
+                    log.errorf(t, "PlaceOrder failed: accountId=%d, symbol=%s", accountId, request.getSymbol());
                     return buildErrorResponse(0, t.getMessage());
                 });
     }
 
     @Override
     public Uni<OrderResponse> cancelOrder(CancelOrderRequest request) {
-        log.infof("CancelOrder: orderId=%d", request.getOrderId());
+        Long accountId = AuthInterceptor.ACCOUNT_ID_CONTEXT_KEY.get();
 
-        return orderCommandService.handleCancel(request)
+        if (accountId == null || accountId <= 0) {
+            log.warn("Invalid or missing accountId in context");
+            return Uni.createFrom().item(buildErrorResponse(request.getOrderId(), "Unauthorized"));
+        }
+
+        log.infof("CancelOrder: accountId=%d, orderId=%d", accountId, request.getOrderId());
+
+        return orderCommandService.handleCancel(accountId, request)
                 .map(this::toResponse)
                 .onFailure().recoverWithItem(t -> {
-                    log.errorf(t, "CancelOrder failed: orderId=%d", request.getOrderId());
+                    log.errorf(t, "CancelOrder failed: accountId=%d, orderId=%d", accountId, request.getOrderId());
                     return buildErrorResponse(request.getOrderId(), t.getMessage());
                 });
     }

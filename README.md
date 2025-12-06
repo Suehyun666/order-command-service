@@ -1,4 +1,4 @@
-# order
+# order-command-service
 
 This project uses Quarkus, the Supersonic Subatomic Java Framework.
 

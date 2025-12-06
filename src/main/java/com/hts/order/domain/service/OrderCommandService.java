@@ -6,12 +6,14 @@ import com.hts.order.domain.model.OrderEntity;
 import com.hts.order.domain.model.ServiceResult;
 import com.hts.order.exceptions.DatabaseException;
 import com.hts.order.exceptions.OrderNotFoundException;
+import com.hts.order.infrastructure.CompensationExecutor;
+import com.hts.order.infrastructure.repository.IdempotencyRepository;
 import com.hts.order.infrastructure.repository.OrderWriteRepository;
 import io.smallrye.mutiny.Uni;
+import io.vertx.mutiny.pgclient.PgPool;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
-import org.jooq.DSLContext;
 
 import java.util.UUID;
 
@@ -22,14 +24,16 @@ public class OrderCommandService {
 
     @Inject AccountGrpcClient accountClient;
     @Inject OrderWriteRepository orderWriteRepository;
-    @Inject DSLContext dslContext;
+    @Inject IdempotencyRepository idempotencyRepository;
+    @Inject CompensationExecutor compensationExecutor;
+    @Inject PgPool client;
 
-    public Uni<ServiceResult> handlePlace(PlaceOrderRequest request) {
-        // Validation
-        long accountId = extractAccountId(request.getSessionId());
-        if (accountId <= 0) {
+    public Uni<ServiceResult> handlePlace(long accountId, PlaceOrderRequest request) {
+        String idempotencyKey = request.getIdempotencyKey();
+
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
             return Uni.createFrom().item(
-                ServiceResult.failure(OrderStatus.REJECTED, "Invalid session")
+                ServiceResult.failure(OrderStatus.REJECTED, "Idempotency key required")
             );
         }
 
@@ -39,24 +43,53 @@ public class OrderCommandService {
             );
         }
 
-        // Generate IDs
+        return idempotencyRepository.tryAcquireLock(idempotencyKey, accountId)
+            .onItem().transformToUni(lockAcquired -> {
+                if (!lockAcquired) {
+                    log.infof("Duplicate request detected: idempotencyKey=%s", idempotencyKey);
+                    return fetchExistingResult(idempotencyKey);
+                }
+
+                return processNewOrder(accountId, idempotencyKey, request);
+            });
+    }
+
+    private Uni<ServiceResult> processNewOrder(long accountId, String idempotencyKey, PlaceOrderRequest request) {
         long orderId = generateOrderId();
         String reserveId = generateReserveId();
 
-        // Build order entity
         OrderEntity order = OrderEntity.from(
                 orderId, accountId, request.getSymbol(), request.getSide(),
                 request.getOrderType(), request.getQuantity(), request.getPrice(),
                 request.getTimeInForce(), reserveId
         );
 
-        // Execute order placement
-        return request.getSide() == Side.BUY
-            ? handleBuyOrder(order)
-            : handleSellOrder(order);
+        return (request.getSide() == Side.BUY
+            ? handleBuyOrderWithCompensation(order, idempotencyKey)
+            : handleSellOrderWithCompensation(order, idempotencyKey))
+            .onFailure().call(ex -> {
+                log.errorf(ex, "Order processing failed: idempotencyKey=%s, orderId=%d",
+                          idempotencyKey, orderId);
+                return idempotencyRepository.updateFailed(idempotencyKey, ex.getMessage());
+            });
     }
 
-    private Uni<ServiceResult> handleBuyOrder(OrderEntity order) {
+    private Uni<ServiceResult> fetchExistingResult(String idempotencyKey) {
+        return idempotencyRepository.findResult(idempotencyKey)
+            .map(result -> {
+                if (result == null || result.orderId() == null) {
+                    return ServiceResult.failure(OrderStatus.REJECTED, "Processing");
+                }
+
+                if ("SUCCESS".equals(result.status())) {
+                    return ServiceResult.success(result.orderId());
+                } else {
+                    return ServiceResult.failure(OrderStatus.REJECTED, "Previously failed");
+                }
+            });
+    }
+
+    private Uni<ServiceResult> handleBuyOrderWithCompensation(OrderEntity order, String idempotencyKey) {
         long amountMicroUnits = order.price() * order.quantity();
 
         return accountClient.reserveCash(
@@ -68,7 +101,12 @@ public class OrderCommandService {
         )
         .onItem().transformToUni(reply -> {
             if (reply.getCode() == AccoutResult.SUCCESS) {
-                return persistOrder(order);
+                return persistOrderWithIdempotency(order, idempotencyKey)
+                    .onFailure().call(dbError -> {
+                        log.errorf(dbError, "DB failed after reserve, compensating: orderId=%d, reserveId=%s",
+                                  order.orderId(), order.reserveId());
+                        return compensationExecutor.compensateCashReserve(order.accountId(), order.reserveId());
+                    });
             } else {
                 log.warnf("Cash reserve failed: accountId=%d, orderId=%d, code=%s",
                          order.accountId(), order.orderId(), reply.getCode());
@@ -86,7 +124,7 @@ public class OrderCommandService {
         );
     }
 
-    private Uni<ServiceResult> handleSellOrder(OrderEntity order) {
+    private Uni<ServiceResult> handleSellOrderWithCompensation(OrderEntity order, String idempotencyKey) {
         return accountClient.reservePosition(
                 order.accountId(),
                 order.symbol(),
@@ -96,7 +134,12 @@ public class OrderCommandService {
         )
         .onItem().transformToUni(reply -> {
             if (reply.getCode() == AccoutResult.SUCCESS) {
-                return persistOrder(order);
+                return persistOrderWithIdempotency(order, idempotencyKey)
+                    .onFailure().call(dbError -> {
+                        log.errorf(dbError, "DB failed after reserve, compensating: orderId=%d, reserveId=%s",
+                                  order.orderId(), order.reserveId());
+                        return compensationExecutor.compensatePositionReserve(order.accountId(), order.reserveId());
+                    });
             } else {
                 log.warnf("Position reserve failed: accountId=%d, orderId=%d, symbol=%s, code=%s",
                          order.accountId(), order.orderId(), order.symbol(), reply.getCode());
@@ -114,87 +157,84 @@ public class OrderCommandService {
         );
     }
 
-    public Uni<ServiceResult> handleCancel(CancelOrderRequest request) {
-        long accountId = extractAccountId(request.getSessionId());
-        if (accountId <= 0) {
+    public Uni<ServiceResult> handleCancel(long accountId, CancelOrderRequest request) {
+        String idempotencyKey = request.getIdempotencyKey();
+
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
             return Uni.createFrom().item(
-                ServiceResult.failure(OrderStatus.REJECTED, "Invalid session")
+                ServiceResult.failure(OrderStatus.REJECTED, "Idempotency key required")
             );
         }
 
-        return Uni.createFrom().item(() -> {
-            org.jooq.Record record = dslContext.transactionResult(tx ->
-                orderWriteRepository.markCancelRequested(tx.dsl(), request.getOrderId(), accountId)
-            );
+        return idempotencyRepository.tryAcquireLock(idempotencyKey, accountId)
+            .onItem().transformToUni(lockAcquired -> {
+                if (!lockAcquired) {
+                    log.infof("Duplicate cancel request detected: idempotencyKey=%s", idempotencyKey);
+                    return fetchExistingResult(idempotencyKey);
+                }
 
-            if (record == null) {
-                throw new OrderNotFoundException("Order not found");
-            }
+                return processCancelOrder(accountId, idempotencyKey, request);
+            });
+    }
 
-            return new CancelInfo(
-                record.get("side", String.class),
-                record.get("reserve_id", String.class)
-            );
-        })
-        .onFailure(OrderNotFoundException.class).recoverWithItem(e -> {
-            log.warnf("Order not found: orderId=%d, accountId=%d", request.getOrderId(), accountId);
-            return null;
-        })
+    private Uni<ServiceResult> processCancelOrder(long accountId, String idempotencyKey, CancelOrderRequest request) {
+        return client.withTransaction(conn ->
+            orderWriteRepository.markCancelRequested(conn, request.getOrderId(), accountId)
+        )
         .onFailure().invoke(t ->
             log.errorf(t, "Cancel DB failed: orderId=%d, accountId=%d",
                       request.getOrderId(), accountId)
         )
-        .onFailure().recoverWithItem(t -> null)
-        .onItem().transformToUni(info -> {
-            if (info == null) {
-                return Uni.createFrom().item(
-                    ServiceResult.failure(OrderStatus.REJECTED, "Order not found or database error")
-                );
+        .onFailure().recoverWithItem((OrderWriteRepository.CancelResult) null)
+        .onItem().transformToUni(result -> {
+            if (result == null) {
+                return idempotencyRepository.updateFailed(idempotencyKey, "Order not found")
+                    .replaceWith(ServiceResult.failure(OrderStatus.REJECTED, "Order not found or database error"));
             }
-            return releaseReserve(accountId, request.getOrderId(), info);
+            return releaseReserveWithIdempotency(accountId, request.getOrderId(),
+                                                result.side(), result.reserveId(), idempotencyKey);
         });
     }
 
-    private Uni<ServiceResult> releaseReserve(long accountId, long orderId, CancelInfo info) {
-        Uni<CommonReply> releaseCall = "BUY".equals(info.side)
-            ? accountClient.releaseCash(accountId, info.reserveId)
-            : accountClient.releasePosition(accountId, info.reserveId);
+    private Uni<ServiceResult> releaseReserveWithIdempotency(long accountId, long orderId,
+                                                             String side, String reserveId, String idempotencyKey) {
+        Uni<CommonReply> releaseCall = "BUY".equals(side)
+            ? accountClient.releaseCash(accountId, reserveId)
+            : accountClient.releasePosition(accountId, reserveId);
 
         return releaseCall
-            .onItem().transform(reply ->
-                ServiceResult.of(OrderStatus.CANCEL_REQUESTED, orderId, "Cancel requested")
-            )
-            .onFailure().invoke(t ->
+            .onItem().transformToUni(reply -> {
+                ServiceResult result = ServiceResult.of(OrderStatus.CANCEL_REQUESTED, orderId, "Cancel requested");
+                return idempotencyRepository.updateSuccess(
+                    idempotencyKey,
+                    orderId,
+                    String.format("{\"orderId\":%d,\"status\":\"CANCEL_REQUESTED\"}", orderId)
+                ).replaceWith(result);
+            })
+            .onFailure().call(t -> {
                 log.errorf(t, "Failed to release reserve: accountId=%d, orderId=%d, reserveId=%s, side=%s",
-                          accountId, orderId, info.reserveId, info.side)
-            )
+                          accountId, orderId, reserveId, side);
+                return idempotencyRepository.updateFailed(idempotencyKey, "Release failed: " + t.getMessage());
+            })
             .onFailure().recoverWithItem(t ->
                 ServiceResult.of(OrderStatus.CANCEL_REQUESTED, orderId, "Cancel requested (release failed)")
             );
     }
 
-    private record CancelInfo(String side, String reserveId) {}
-
-    private Uni<ServiceResult> persistOrder(OrderEntity order) {
-        return Uni.createFrom().item(() -> {
-            dslContext.transaction(tx -> {
-                int orderRows = orderWriteRepository.insertOrder(tx.dsl(), order);
-                int outboxRows = orderWriteRepository.insertOutbox(tx.dsl(), order, "ORDER_PLACED");
-
-                if (orderRows != 1 || outboxRows != 1) {
-                    log.errorf("DB insert failed: orderId=%d, orderRows=%d, outboxRows=%d",
-                              order.orderId(), orderRows, outboxRows);
-                    throw new DatabaseException("Failed to persist order");
-                }
-            });
-            return ServiceResult.success(order.orderId());
-        })
+    private Uni<ServiceResult> persistOrderWithIdempotency(OrderEntity order, String idempotencyKey) {
+        return client.withTransaction(conn ->
+            orderWriteRepository.insertOrderAtomic(conn, order, "ORDER_PLACED")
+                .chain(() -> idempotencyRepository.updateSuccessInTx(
+                    conn,
+                    idempotencyKey,
+                    order.orderId(),
+                    String.format("{\"orderId\":%d,\"status\":\"SUCCESS\"}", order.orderId())
+                ))
+        )
+        .map(v -> ServiceResult.success(order.orderId()))
         .onFailure().invoke(t ->
             log.errorf(t, "Persist order failed: orderId=%d, accountId=%d",
                       order.orderId(), order.accountId())
-        )
-        .onFailure().recoverWithItem(t ->
-            ServiceResult.failure(OrderStatus.REJECTED, "Database error")
         );
     }
 
@@ -204,19 +244,5 @@ public class OrderCommandService {
 
     private String generateReserveId() {
         return UUID.randomUUID().toString();
-    }
-
-    private long extractAccountId(String sessionId) {
-        if (sessionId == null || sessionId.isBlank()) {
-            log.warn("Empty sessionId provided");
-            return 0L;
-        }
-
-        try {
-            return Long.parseLong(sessionId);
-        } catch (NumberFormatException e) {
-            log.errorf(e, "Failed to parse accountId from sessionId: %s", sessionId);
-            return 0L;
-        }
     }
 }

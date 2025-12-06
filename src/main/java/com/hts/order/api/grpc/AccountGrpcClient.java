@@ -18,7 +18,7 @@ public class AccountGrpcClient {
     private static final Logger log = Logger.getLogger(AccountGrpcClient.class);
 
     @Inject
-    @GrpcClient("account-service")
+    @GrpcClient("account-command-service")
     AccountOrderService accountService;
 
     @Retry(maxRetries = 3, delay = 10, delayUnit = ChronoUnit.MILLIS, jitter = 5)

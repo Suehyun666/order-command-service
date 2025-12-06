@@ -17,8 +17,10 @@ dependencies {
     //gRPC
     implementation 'io.quarkus:quarkus-grpc'
     implementation 'io.quarkus:quarkus-mutiny'
+    implementation 'io.quarkus:quarkus-vertx'
 
     //Database
+    implementation 'io.quarkus:quarkus-reactive-pg-client'
     implementation 'io.quarkus:quarkus-jdbc-postgresql'
     implementation 'io.quarkiverse.jooq:quarkus-jooq:2.1.0'
     implementation 'io.quarkus:quarkus-flyway'

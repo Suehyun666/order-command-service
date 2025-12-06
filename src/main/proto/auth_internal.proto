@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package auth.internal;
+
+option java_multiple_files = true;
+option java_package = "com.hts.generated.grpc.internal";
+option java_outer_classname = "AuthInternalProto";
+
+message ValidateSessionRequest {
+  string session_id = 1;
+}
+
+message ValidateSessionReply {
+  bool is_valid = 1;
+  int64 account_id = 2;
+}
+
+service AuthInternalService {
+  rpc ValidateSession(ValidateSessionRequest) returns (ValidateSessionReply);
+}
