@@ -23,8 +23,8 @@ public record OrderEntity(
 
     public byte[] serializeForOutbox() {
         return String.format(
-                "{\"orderId\":%d,\"accountId\":%d,\"symbol\":\"%s\",\"side\":\"%s\",\"quantity\":%d,\"price\":%d}",
-                orderId, accountId, symbol, side, quantity, price
+                "{\"order_id\":\"%d\",\"account_id\":%d,\"symbol\":\"%s\",\"side\":\"%s\",\"quantity\":%d,\"price\":%d}",
+                orderId, accountId, symbol, side.name(), quantity, price
         ).getBytes();
     }
 }

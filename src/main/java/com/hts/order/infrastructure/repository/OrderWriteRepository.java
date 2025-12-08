@@ -88,7 +88,8 @@ public class OrderWriteRepository {
         })
         .call(result -> {
             if (result != null) {
-                return insertCancelHistory(conn, orderId);
+                return insertCancelHistory(conn, orderId)
+                    .chain(() -> insertCancelOutbox(conn, orderId));
             }
             return Uni.createFrom().voidItem();
         });
@@ -99,6 +100,15 @@ public class OrderWriteRepository {
             INSERT INTO order_history(order_id, account_id, status, previous_status, quantity, price, filled_quantity, reason)
             SELECT order_id, account_id, 'CANCEL_REQUESTED', 'RECEIVED', quantity, price, filled_quantity, 'User requested'
             FROM orders WHERE order_id = $1
+        """)
+        .execute(Tuple.of(orderId))
+        .replaceWithVoid();
+    }
+
+    private Uni<Void> insertCancelOutbox(SqlConnection conn, long orderId) {
+        return conn.preparedQuery("""
+            INSERT INTO outbox(event_type, aggregate_id, payload, status)
+            VALUES ('ORDER_CANCEL_REQUESTED', $1, '{}'::jsonb, 'PENDING')
         """)
         .execute(Tuple.of(orderId))
         .replaceWithVoid();
