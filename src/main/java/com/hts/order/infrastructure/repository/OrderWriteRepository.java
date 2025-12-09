@@ -57,14 +57,17 @@ public class OrderWriteRepository {
     }
 
     private Uni<Void> insertOutbox(SqlConnection conn, OrderEntity order, String eventType) {
+        String idempotencyKey = eventType + "-" + order.orderId() + "-" + System.currentTimeMillis();
         return conn.preparedQuery("""
-           INSERT INTO outbox(event_type, aggregate_id, payload, status)
-           VALUES ($1, $2, $3::jsonb, 'PENDING')
+           INSERT INTO outbox(aggregate_type, aggregate_id, event_type, payload, idempotency_key, status)
+           VALUES ($1, $2, $3, $4::jsonb, $5, 'PENDING')
         """)
         .execute(Tuple.of(
-            eventType,
+            "Order",
             order.orderId(),
-            new String(order.serializeForOutbox())
+            eventType,
+            new String(order.serializeForOutbox()),
+            idempotencyKey
         ))
         .replaceWithVoid();
     }
@@ -106,11 +109,12 @@ public class OrderWriteRepository {
     }
 
     private Uni<Void> insertCancelOutbox(SqlConnection conn, long orderId) {
+        String idempotencyKey = "ORDER_CANCEL_REQUESTED-" + orderId + "-" + System.currentTimeMillis();
         return conn.preparedQuery("""
-            INSERT INTO outbox(event_type, aggregate_id, payload, status)
-            VALUES ('ORDER_CANCEL_REQUESTED', $1, '{}'::jsonb, 'PENDING')
+            INSERT INTO outbox(aggregate_type, aggregate_id, event_type, payload, idempotency_key, status)
+            VALUES ($1, $2, $3, '{}'::jsonb, $4, 'PENDING')
         """)
-        .execute(Tuple.of(orderId))
+        .execute(Tuple.of("Order", orderId, "ORDER_CANCEL_REQUESTED", idempotencyKey))
         .replaceWithVoid();
     }
 

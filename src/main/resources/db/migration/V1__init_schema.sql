@@ -60,13 +60,17 @@ ALTER TABLE idempotency_keys SET (fillfactor = 90);
 -- Outbox table for transactional outbox pattern
 CREATE TABLE outbox (
     id BIGSERIAL PRIMARY KEY,
-    event_type VARCHAR(50) NOT NULL,
+    aggregate_type VARCHAR(50) NOT NULL,
     aggregate_id BIGINT NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
     payload TEXT NOT NULL,
+    idempotency_key VARCHAR(255) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    processed_at TIMESTAMP
+    available_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    published_at TIMESTAMP
 );
 
-CREATE INDEX idx_outbox_status ON outbox(status);
-CREATE INDEX idx_outbox_created ON outbox(created_at);
+CREATE INDEX idx_outbox_status_available ON outbox(status, available_at) WHERE status = 'PENDING';
+CREATE INDEX idx_outbox_aggregate ON outbox(aggregate_type, aggregate_id);
+CREATE INDEX idx_outbox_created ON outbox(created_at DESC);
