@@ -18,8 +18,8 @@ public class OrderGrpcServer implements OrderService {
 
     @Override
     public Uni<OrderResponse> placeOrder(PlaceOrderRequest request) {
-        Long accountId = AuthInterceptor.ACCOUNT_ID_CONTEXT_KEY.get();
-
+        //Long accountId = AuthInterceptor.ACCOUNT_ID_CONTEXT_KEY.get();
+        Long accountId = request.getAccountId();
         if (accountId == null || accountId <= 0) {
             log.warn("Invalid or missing accountId in context");
             return Uni.createFrom().item(buildErrorResponse(0, "Unauthorized"));
@@ -38,7 +38,8 @@ public class OrderGrpcServer implements OrderService {
 
     @Override
     public Uni<OrderResponse> cancelOrder(CancelOrderRequest request) {
-        Long accountId = AuthInterceptor.ACCOUNT_ID_CONTEXT_KEY.get();
+//        Long accountId = AuthInterceptor.ACCOUNT_ID_CONTEXT_KEY.get();
+        Long accountId = request.getAccountId();
 
         if (accountId == null || accountId <= 0) {
             log.warn("Invalid or missing accountId in context");

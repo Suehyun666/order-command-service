@@ -10,20 +10,22 @@ option java_outer_classname = "OrderProto";
 
 // 주문 요청
 message PlaceOrderRequest {
-  string idempotency_key = 1;  // 멱등성 키 (UUID, 필수)
-  string symbol = 2;           // 종목 코드
-  Side side = 3;               // 매수/매도
-  OrderType order_type = 4;    // 주문 타입
-  int64 quantity = 5;          // 수량
-  int64 price = 6;             // 가격 (시장가는 0)
-  TimeInForce time_in_force = 7; // 유효기간
+  int64 account_id = 1;      // 계좌 ID
+  string idempotency_key = 2;  // 멱등성 키 (UUID, 필수)
+  string symbol = 3;           // 종목 코드
+  Side side = 4;               // 매수/매도
+  OrderType order_type = 5;    // 주문 타입
+  int64 quantity = 6;          // 수량
+  int64 price = 7;             // 가격 (시장가는 0)
+  TimeInForce time_in_force = 8; // 유효기간
 }
 
 // 주문 취소 요청
 message CancelOrderRequest {
-  string idempotency_key = 1;  // 멱등성 키 (UUID, 필수)
-  string symbol = 2;         // 종목 코드
-  int64 order_id = 3;          // 주문 ID
+  int64 account_id = 1;      // 계좌 ID
+  string idempotency_key = 2;  // 멱등성 키 (UUID, 필수)
+  string symbol = 3;         // 종목 코드
+  int64 order_id = 4;          // 주문 ID
 }
 
 //  주문 접수 응답
